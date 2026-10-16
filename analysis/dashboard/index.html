@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Anti-Cheat Research Dashboard: Server-Side Movement Verification</title>
+<style>
+  :root {
+    --ink: #0f172a; --muted: #64748b; --line: #e2e8f0; --bg: #f8fafc; --card: #ffffff;
+    --accent: #1e3a8a; --accent-light: #eff6ff;
+    --honest: #2563eb; --speed: #dc2626; --position: #d97706; --replay: #7c3aed;
+    --ok: #16a34a; --ok-bg: #dcfce7; --bad: #dc2626; --bad-bg: #fee2e2;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.5 "Segoe UI", system-ui, -apple-system, sans-serif; color: var(--ink); background: var(--bg); }
+  
+  header { background: linear-gradient(135deg, #1e3a8a 0%, #0f172a 100%); color: #fff; padding: 28px 36px 22px; }
+  header h1 { margin: 0 0 6px; font-size: 24px; font-weight: 700; letter-spacing: -0.02em; }
+  header p { margin: 0; color: #cbd5e1; max-width: 950px; font-size: 14.5px; line-height: 1.6; }
+  
+  nav { position: sticky; top: 0; z-index: 10; background: rgba(255,255,255,0.95); backdrop-filter: blur(8px); border-bottom: 1px solid var(--line); padding: 10px 36px; display: flex; gap: 20px; flex-wrap: wrap; }
+  nav a { color: var(--muted); text-decoration: none; font-weight: 600; font-size: 13.5px; transition: color 0.15s; }
+  nav a:hover { color: var(--accent); }
+  
+  main { max-width: 1280px; margin: 0 auto; padding: 24px 36px 60px; }
+  section { margin-top: 36px; }
+  
+  h2 { font-size: 20px; font-weight: 700; margin: 0 0 6px; color: var(--ink); display: flex; align-items: center; gap: 10px; }
+  h2 .rq { font-size: 12px; font-weight: 700; color: #fff; background: var(--accent); border-radius: 4px; padding: 2px 8px; text-transform: uppercase; letter-spacing: 0.05em; }
+  
+  .takeaway { background: #f0fdf4; border-left: 4px solid var(--ok); padding: 10px 14px; border-radius: 0 6px 6px 0; margin: 10px 0 16px; font-size: 13.5px; color: #166534; line-height: 1.5; }
+  .takeaway strong { color: #14532d; }
+  
+  .lead { color: var(--muted); margin: 0 0 14px; max-width: 950px; font-size: 14px; line-height: 1.5; }
+  
+  .grid { display: grid; gap: 16px; }
+  .g2 { grid-template-columns: 1fr 1fr; }
+  .g3 { grid-template-columns: repeat(3, 1fr); }
+  .g4 { grid-template-columns: repeat(4, 1fr); }
+  @media (max-width: 960px) { .g2, .g3, .g4 { grid-template-columns: 1fr; } }
+  
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; box-shadow: 0 1px 3px rgba(0,0,0,0.02); }
+  .card h3 { margin: 0 0 8px; font-size: 15px; font-weight: 600; color: var(--ink); }
+  .card .note { color: var(--muted); font-size: 12px; margin: 8px 0 0; line-height: 1.4; }
+  
+  .kpi { display: flex; flex-direction: column; justify-content: center; }
+  .kpi .value { font-size: 28px; font-weight: 800; color: var(--accent); line-height: 1.1; margin-bottom: 4px; }
+  .kpi.ok .value { color: var(--ok); }
+  .kpi .label { font-size: 13px; font-weight: 600; color: var(--ink); }
+  .kpi .desc { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  
+  table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  th, td { padding: 7px 10px; border-bottom: 1px solid var(--line); text-align: right; }
+  th { color: var(--muted); font-weight: 600; background: #f8fafc; font-size: 12px; text-transform: uppercase; letter-spacing: 0.03em; }
+  td:first-child, th:first-child { text-align: left; }
+  td.l, th.l { text-align: left; }
+  
+  .controls { display: flex; gap: 14px; flex-wrap: wrap; align-items: center; margin-bottom: 12px; font-size: 13px; }
+  .controls label { font-weight: 600; color: var(--muted); }
+  select { font: inherit; padding: 4px 8px; border: 1px solid #cbd5e1; border-radius: 6px; background: #fff; color: var(--ink); cursor: pointer; }
+  
+  .rule-box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; margin: 10px 0; }
+  .rule-title { font-weight: 700; font-size: 13px; color: var(--ink); margin-bottom: 4px; }
+  .rule-code { font-family: ui-monospace, Menlo, Consolas, monospace; background: #ffffff; border: 1px solid #cbd5e1; border-radius: 6px; padding: 8px 12px; font-size: 13.5px; color: #0f172a; font-weight: 600; }
+  
+  .pill { display: inline-block; border-radius: 999px; padding: 2px 10px; font-size: 12px; font-weight: 700; }
+  .pill.flag { background: var(--bad-bg); color: var(--bad); }
+  .pill.pass { background: var(--ok-bg); color: var(--ok); }
+  
+  .plot { width: 100%; height: 360px; }
+  .plot.tall { height: 420px; }
+  .plot.short { height: 280px; }
+  
+  .metric-badge { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 6px; background: #f1f5f9; font-size: 12px; font-weight: 600; }
+  
+  footer { color: var(--muted); font-size: 12px; margin-top: 50px; border-top: 1px solid var(--line); padding-top: 16px; text-align: center; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Reconciliation Divergence Fingerprinting</h1>
+  <p>In multiplayer games, the server checks player movement by running its own calculation for every input. If the player's claimed position doesn't match the server's result, a <strong>divergence</strong> occurs. This research proves that movement cheats produce unmistakable error patterns that bad Wi-Fi cannot mimic, allowing servers to catch cheaters with 99.4% accuracy without invasive client-side software.</p>
+</header>
+
+<nav>
+  <a href="#overview">Overview</a>
+  <a href="#baseline">1. Honest Baseline</a>
+  <a href="#fingerprints">2. Cheat Fingerprints</a>
+  <a href="#detection">3. Detector Performance</a>
+  <a href="#explorer">4. Session Explorer</a>
+  <a href="#network">Network Details</a>
+</nav>
+
+<main>
+
+<!-- SECTION 0: KEY METRICS OVERVIEW -->
+<section id="overview" style="margin-top:20px;">
+  <div class="grid g4" id="kpis"></div>
+  <p class="note" id="design" style="color:var(--muted);font-size:13px;margin-top:12px;text-align:center;"></p>
+</section>
+
+<!-- SECTION 1: RQ1 HONEST BASELINE -->
+<section id="baseline">
+  <h2>1. Honest Player Baseline <span class="rq">RQ1</span></h2>
+  <div class="takeaway">
+    <strong>Key Takeaway:</strong> Ping/latency alone causes <strong>0.00 m desync</strong> for honest players. Desync only occurs when packets are lost in transit, and even then, the average error stays tiny (&le; 0.40 m) and heals quickly.
+  </div>
+  <p class="lead">Because honest players run the exact same movement logic as the server, both sides calculate identical positions. When packets drop, the server misses a single step, creating a small, temporary error plateau until the client snaps back.</p>
+  
+  <div class="grid g2">
+    <div class="card">
+      <h3>Average Divergence Under Packet Loss</h3>
+      <div class="controls">
+        <label>Metric to Display:</label>
+        <select id="baselineMetric"></select>
+      </div>
+      <div id="baselineHeat" class="plot"></div>
+      <p class="note">Notice that at 0% packet loss (bottom row), divergence is strictly 0.00 m at all latencies.</p>
+    </div>
+    <div class="card">
+      <h3>Peak Divergence per Honest Session</h3>
+      <div id="baselineBox" class="plot"></div>
+      <p class="note">Dashed line: the 2.13 m threshold rule (the absolute highest peak seen across all honest training runs).</p>
+    </div>
+  </div>
+</section>
+
+<!-- SECTION 2: RQ2 CHEAT FINGERPRINTS -->
+<section id="fingerprints">
+  <h2>2. Cheat Fingerprints vs. Honest Play <span class="rq">RQ2</span></h2>
+  <div class="takeaway">
+    <strong>Key Takeaway:</strong> Cheating does not look like bad Wi-Fi. Speed hacks scale continuously with ping, position hacks create huge flat jumps (7.07 m), and input replays produce zero client snap-backs.
+  </div>
+  <p class="lead">Compare how each movement cheat separates cleanly from honest gameplay across different network conditions:</p>
+  
+  <div class="grid g2">
+    <div class="card">
+      <h3>Divergence Magnitude Comparison</h3>
+      <div class="controls">
+        <label>Feature:</label><select id="featureSelect"></select>
+        <label>Loss Filter:</label><select id="featureLoss"></select>
+      </div>
+      <div id="featureBox" class="plot tall"></div>
+      <p class="note" id="featureNote"></p>
+    </div>
+    <div class="card">
+      <h3>Speed Hack Physics: Error vs. Round-Trip Time</h3>
+      <div id="speedTheory" class="plot tall"></div>
+      <p class="note">The black line shows the theoretical physics equation: <code>Error = (&alpha;&minus;1) &middot; v &middot; RTT</code>. The real data points fall directly on top of the mathematical prediction.</p>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:16px;">
+    <h3>The Visual Separation: All 7,200 Sessions Plotted</h3>
+    <div id="scatter" class="plot tall"></div>
+    <p class="note">Every dot is an entire 30-second gameplay session. Honest sessions (blue) cluster near zero in the bottom left, while cheats (red, orange, purple) sit far to the right. The black dashed line is our 1-rule decision tree boundary.</p>
+  </div>
+</section>
+
+<!-- SECTION 3: RQ3 DETECTORS -->
+<section id="detection">
+  <h2>3. Machine Learning & Detection Rules <span class="rq">RQ3</span></h2>
+  <div class="takeaway">
+    <strong>Key Takeaway:</strong> A simple, 1-rule decision tree achieves <strong>99.4% detection</strong> with only <strong>1 false alarm in 540 honest sessions</strong> (0.19% false positive rate).
+  </div>
+  <p class="lead" id="splitText"></p>
+  
+  <div class="grid g2">
+    <div class="card">
+      <h3>Classifier Comparison (Test Set: 2,160 Sessions)</h3>
+      <table id="metricsTable"></table>
+      
+      <div class="rule-box" style="margin-top:16px;">
+        <div class="rule-title">The Recommended Detector (1 Simple Rule):</div>
+        <div class="rule-code" id="rules"></div>
+        <p class="note" style="margin-top:6px;">Easy to deploy in production: costs almost zero CPU cycles and requires no complex neural network.</p>
+      </div>
+    </div>
+    <div class="card">
+      <h3>ROC Detection Curves</h3>
+      <div id="roc" class="plot"></div>
+      <p class="note">The curve hugs the top-left corner, indicating an exceptional Area Under Curve (AUC &gt; 0.996) for all detectors.</p>
+    </div>
+  </div>
+
+  <div class="grid g2" style="margin-top:16px;">
+    <div class="card">
+      <div class="controls">
+        <label>Selected Model:</label>
+        <select id="modelSelect"></select>
+      </div>
+      <div class="grid g2">
+        <div id="confusion" class="plot short"></div>
+        <div id="perType" class="plot short"></div>
+      </div>
+    </div>
+    <div class="card">
+      <h3>Mistakes Made by Selected Detector</h3>
+      <div style="max-height:280px;overflow:auto;"><table id="errorTable"></table></div>
+      <p class="note" id="errorNote"></p>
+    </div>
+  </div>
+</section>
+
+<!-- SECTION 4: INTERACTIVE SESSION EXPLORER -->
+<section id="explorer">
+  <h2>4. Interactive Session Explorer</h2>
+  <div class="takeaway">
+    <strong>Explore Any Match:</strong> Select a player type, latency, and packet loss to see exactly how the client's claimed movement compared to the server's authoritative path in real time.
+  </div>
+  
+  <div class="card">
+    <div class="controls" style="background:#f8fafc;padding:10px 14px;border-radius:8px;border:1px solid #e2e8f0;">
+      <label>Player Type:</label><select id="exType"></select>
+      <label>Ping Delay:</label><select id="exLatency"></select>
+      <label>Packet Loss:</label><select id="exLoss"></select>
+      <label>Session Run:</label><select id="exRun"></select>
+      <div style="margin-left:auto;" id="exVerdict"></div>
+    </div>
+    
+    <div class="grid g2" style="margin-top:12px;">
+      <div id="exSeries" class="plot"></div>
+      <div id="exArena" class="plot"></div>
+    </div>
+    
+    <div style="margin-top:14px;overflow-x:auto;">
+      <table id="exFeatures"></table>
+    </div>
+  </div>
+</section>
+
+<!-- SECTION 5: NETWORK EMULATION VERIFICATION -->
+<section id="network">
+  <h2>Network Verification Details</h2>
+  <p class="lead">The simulation uses real UDP sockets over loopback (127.0.0.1) with a fixed, tick-rounded delay and independent Bernoulli loss. This table confirms that actual measured network link statistics matched the target configurations perfectly:</p>
+  <div class="card"><table id="networkTable"></table></div>
+</section>
+
+<footer>
+  Reconciliation Divergence Fingerprinting Research Prototype &bull; Fast-Forward Reproducible Pipeline &bull; Runs completely offline
+</footer>
+
+</main>
+
+<script src="vendor/plotly.min.js"></script>
+<script src="dashboard_data.js"></script>
+<script>
+"use strict";
+const D = window.DASHBOARD_DATA;
+const TYPES = D.meta.types;
+const LABEL = { Legitimate: "Honest", SpeedHack: "Speed Hack (2x)", PositionHack: "Position Hack (+7 m)", InputReplay: "Input Replay" };
+const COLOUR = { Legitimate: "#2563eb", SpeedHack: "#dc2626", PositionHack: "#d97706", InputReplay: "#7c3aed" };
+const MODELS = ["DecisionTree", "LogisticRegression", "Threshold"];
+const MODEL_LABEL = { DecisionTree: "Decision Tree (1 Rule)", LogisticRegression: "Logistic Regression", Threshold: "Peak Error Threshold" };
+const FEATURE_INFO = {
+  MeanCorrectionMagnitude: ["Mean divergence of divergent inputs", "m", "The primary detector feature: average error over only the inputs that desynced (> 0.01 m)."],
+  MaxMagnitude: ["Largest peak divergence", "m", "The single largest position mismatch observed in the entire session."],
+  CorrectionsPerSecond: ["Desynced inputs per second", "1/s", "How frequently inputs mismatched during gameplay."],
+  DirectionConsistency: ["Direction consistency R", "", "1.0 = error always in the same direction (straight line); 0.0 = random directions (Wi-Fi packet loss)."],
+  MeanMagnitude: ["Mean divergence over all inputs", "m", "Average error across every input, including zero-error inputs."],
+  LargeCorrectionRatio: ["Fraction of large errors (>= 0.05 m)", "", "Share of inputs that suffered noticeable desync."],
+};
+const CFG = { displaylogo: false, responsive: true, modeBarButtonsToRemove: ["lasso2d", "select2d", "autoScale2d"] };
+const BASE = { margin: { l: 55, r: 18, t: 30, b: 45 }, font: { family: "Segoe UI, system-ui, sans-serif", size: 12 }, paper_bgcolor: "#fff", plot_bgcolor: "#fff" };
+const fmt = (v, d = 2) => Number(v).toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d });
+const pct = (v, d = 1) => fmt(100 * v, d) + "%";
+const col = Object.fromEntries(D.sessionColumns.map((c, i) => [c, i]));
+const S = D.sessions;
+const typeOf = r => TYPES[r[col.type]];
+const lats = D.meta.latencies, losses = D.meta.losses;
+const rtt = l => 2 * D.meta.effectiveOneWay[String(l)];
+const layout = extra => Object.assign({}, BASE, extra);
+const LAT_AXIS = { title: "Configured One-Way Delay", categoryorder: "array", categoryarray: lats.map(l => `${l} ms`) };
+function el(id) { return document.getElementById(id); }
+function options(select, values, labels, selected) {
+  select.innerHTML = values.map((v, i) => `<option value="${v}" ${v == selected ? "selected" : ""}>${labels ? labels[i] : v}</option>`).join("");
+}
+
+// ---------------------------------------------------------------- OVERVIEW
+(function overview() {
+  const tree = D.metrics.find(m => m.Model === "DecisionTree");
+  const cards = [
+    { v: pct(tree.DetectionRate), l: "Cheats Caught", d: `${tree.TP} of ${tree.TP + tree.FN} cheating sessions flagged`, ok: true },
+    { v: pct(tree.FalsePositiveRate, 2), l: "False Alarm Rate", d: `Only ${tree.FP} of ${tree.FP + tree.TN} honest sessions flagged`, ok: true },
+    { v: fmt(D.meta.sessions, 0), l: "Total Sessions", d: "7,200 sessions across 9 network profiles", ok: false },
+    { v: "0.00 m", l: "Honest Baseline", d: "Zero divergence at 0% loss (at all pings)", ok: true }
+  ];
+  el("kpis").innerHTML = cards.map(c => `
+    <div class="card kpi ${c.ok ? 'ok' : ''}">
+      <div class="value">${c.v}</div>
+      <div class="label">${c.l}</div>
+      <div class="desc">${c.d}</div>
+    </div>`).join("");
+  el("design").innerHTML = `Dataset: 4 Player Types &bull; 3 Delays (50, 150, 300 ms) &bull; 3 Loss Rates (0%, 3%, 10%) &bull; 200 Runs &bull; Fully Deterministic`;
+})();
+
+// ---------------------------------------------------------------- NETWORK CHECK
+(function network() {
+  let html = `<tr><th>Configured Delay</th><th>Effective One-Way</th><th>Round-Trip Time</th><th>Target Loss</th><th>Measured Loss</th><th>Logged Inputs / Session</th></tr>`;
+  for (const l of lats) for (const p of losses) {
+    const rows = S.filter(r => r[col.latency] === l && r[col.loss] === p);
+    const m = k => rows.reduce((a, r) => a + r[col[k]], 0) / rows.length;
+    html += `<tr>
+      <td><strong>${l} ms</strong></td>
+      <td>${fmt(D.meta.effectiveOneWay[String(l)], 1)} ms</td>
+      <td>${fmt(rtt(l), 1)} ms</td>
+      <td>${p}%</td>
+      <td><strong>${fmt(m("inputLoss"))}%</strong></td>
+      <td>${fmt(m("rows"), 0)} / 900</td>
+    </tr>`;
+  }
+  el("networkTable").innerHTML = html;
+})();
+
+// ---------------------------------------------------------------- RQ1 BASELINE
+(function baseline() {
+  const metrics = {
+    MeanDivergenceOfDivergentMean: ["Average Error of Desynced Inputs (m)", 3],
+    MaxDivergenceMedian: ["Median Peak Error (m)", 2],
+    DivergentInputsMean: ["Desynced Inputs per Session (out of 900)", 1],
+    ClientCorrectionsMean: ["Client Snap-Backs per Session", 1],
+  };
+  options(el("baselineMetric"), Object.keys(metrics), Object.values(metrics).map(m => m[0]), "MeanDivergenceOfDivergentMean");
+  const draw = () => {
+    const key = el("baselineMetric").value;
+    const z = losses.map(p => lats.map(l => D.conditions.find(c => c.PlayerType === "Legitimate" && c.LatencyMs === l && c.PacketLossPercent === p)[key]));
+    Plotly.react("baselineHeat", [{
+      type: "heatmap", z, x: lats.map(l => `${l} ms`), y: losses.map(p => `${p}% Loss`), colorscale: [[0, "#eff6ff"], [1, "#1e3a8a"]], showscale: false,
+      text: z.map(r => r.map(v => fmt(v, metrics[key][1]))), texttemplate: "%{text}", hovertemplate: "%{y}, %{x}: %{text}<extra></extra>",
+    }], layout({ xaxis: LAT_AXIS, margin: { l: 75, r: 10, t: 20, b: 45 } }), CFG);
+  };
+  el("baselineMetric").onchange = draw; draw();
+
+  const traces = losses.map((p, i) => {
+    const rows = S.filter(r => typeOf(r) === "Legitimate" && r[col.loss] === p);
+    return { type: "box", name: `${p}% Loss`, x: rows.map(r => `${r[col.latency]} ms`), y: rows.map(r => r[col.MaxMagnitude]),
+             marker: { color: ["#93c5fd", "#3b82f6", "#1e3a8a"][i], size: 3 }, boxpoints: "outliers" };
+  });
+  Plotly.newPlot("baselineBox", traces, layout({
+    boxmode: "group", yaxis: { title: "Peak Divergence (m)", rangemode: "tozero" }, xaxis: LAT_AXIS,
+    shapes: [{ type: "line", xref: "paper", x0: 0, x1: 1, y0: D.model.thresholdMaxMagnitude, y1: D.model.thresholdMaxMagnitude, line: { dash: "dot", color: "#dc2626", width: 1.5 } }],
+    annotations: [{ xref: "paper", x: 0.02, y: D.model.thresholdMaxMagnitude, text: `Threshold: ${fmt(D.model.thresholdMaxMagnitude)} m`, showarrow: false, yshift: 9, xanchor: "left", font: { size: 11, color: "#dc2626" } }],
+    legend: { orientation: "h", y: 1.12 },
+  }), CFG);
+})();
+
+// ---------------------------------------------------------------- RQ2 FINGERPRINTS
+(function fingerprints() {
+  const feats = Object.keys(FEATURE_INFO);
+  options(el("featureSelect"), feats, feats.map(f => FEATURE_INFO[f][0]), "MeanCorrectionMagnitude");
+  options(el("featureLoss"), ["all", ...losses], ["All Loss Conditions", ...losses.map(p => `${p}% Loss`)], "all");
+  const draw = () => {
+    const f = el("featureSelect").value, loss = el("featureLoss").value;
+    const traces = TYPES.map(t => {
+      const rows = S.filter(r => typeOf(r) === t && (loss === "all" || r[col.loss] === Number(loss)));
+      return { type: "box", name: LABEL[t], x: rows.map(r => `${r[col.latency]} ms`), y: rows.map(r => r[col[f]]),
+               marker: { color: COLOUR[t], size: 2.5 }, line: { width: 1.3 }, boxpoints: "outliers" };
+    });
+    const shapes = [];
+    if (f === "MeanCorrectionMagnitude") shapes.push({ type: "line", xref: "paper", x0: 0, x1: 1, y0: D.model.treeThresholds[0], y1: D.model.treeThresholds[0], line: { dash: "dash", color: "#0f172a", width: 2 } });
+    if (f === "MaxMagnitude") shapes.push({ type: "line", xref: "paper", x0: 0, x1: 1, y0: D.model.thresholdMaxMagnitude, y1: D.model.thresholdMaxMagnitude, line: { dash: "dot", color: "#dc2626", width: 1.5 } });
+    const unit = FEATURE_INFO[f][1];
+    Plotly.react("featureBox", traces, layout({ boxmode: "group", xaxis: LAT_AXIS,
+      yaxis: { title: FEATURE_INFO[f][0] + (unit ? ` (${unit})` : "") }, legend: { orientation: "h", y: 1.1 }, shapes }), CFG);
+    el("featureNote").textContent = FEATURE_INFO[f][2] + (shapes.length ? " The dashed horizontal line indicates the decision threshold separating honest play from cheats." : "");
+  };
+  el("featureSelect").onchange = draw; el("featureLoss").onchange = draw; draw();
+
+  const rtts = lats.map(rtt);
+  const traces = [];
+  for (const [p, dash] of [[0, "solid"], [3, "dash"], [10, "dot"]]) {
+    traces.push({ name: `Speed Hack (${p}% loss)`, x: rtts, mode: "lines+markers", line: { color: COLOUR.SpeedHack, dash, width: 2 }, marker: { symbol: "square", size: 7 },
+      y: lats.map(l => D.conditions.find(c => c.PlayerType === "SpeedHack" && c.LatencyMs === l && c.PacketLossPercent === p).MaxDivergenceMedian) });
+  }
+  traces.push({ name: "Honest Player (10% loss)", x: rtts, mode: "lines+markers", line: { color: COLOUR.Legitimate, dash: "dot", width: 2 }, marker: { symbol: "circle", size: 6 },
+    y: lats.map(l => D.conditions.find(c => c.PlayerType === "Legitimate" && c.LatencyMs === l && c.PacketLossPercent === 10).MaxDivergenceMedian) });
+  traces.push({ name: "Theoretical Equation (&alpha;&minus;1)&middot;v&middot;RTT", x: [rtts[0], rtts[rtts.length - 1]], y: [8 * rtts[0] / 1000, 8 * rtts[rtts.length - 1] / 1000], mode: "lines", line: { color: "#000", width: 1.5 } });
+  Plotly.newPlot("speedTheory", traces, layout({ xaxis: { title: "Round-Trip Ping Time (ms)", tickvals: rtts, ticktext: rtts.map(r => fmt(r, 0) + " ms") },
+    yaxis: { title: "Median Peak Error (m)", rangemode: "tozero" }, legend: { x: 0.02, y: 0.98 } }), CFG);
+
+  const errors = new Set(D.errors.filter(e => e.wrong.includes("DecisionTree")).map(e => e.id));
+  const sc = TYPES.map(t => {
+    const rows = S.filter(r => typeOf(r) === t);
+    return { type: "scattergl", mode: "markers", name: LABEL[t], x: rows.map(r => Math.max(0.01, r[col.MeanCorrectionMagnitude])), y: rows.map(r => Math.max(0.01, r[col.MaxMagnitude])),
+             text: rows.map(r => r[col.id]), hovertemplate: "<b>%{text}</b><br>Mean Div: %{x:.3f} m<br>Peak Div: %{y:.2f} m<extra></extra>",
+             marker: { color: COLOUR[t], size: 4.5, opacity: 0.45 } };
+  });
+  const er = S.filter(r => errors.has(r[col.id]));
+  sc.push({ type: "scatter", mode: "markers", name: "Tree Mistakes (Test Set)", x: er.map(r => r[col.MeanCorrectionMagnitude]), y: er.map(r => r[col.MaxMagnitude]),
+            text: er.map(r => r[col.id]), hovertemplate: "<b>%{text} (Mistake)</b><extra></extra>", marker: { size: 12, color: "rgba(0,0,0,0)", line: { color: "#000", width: 2 } } });
+  Plotly.newPlot("scatter", sc, layout({
+    xaxis: { type: "log", dtick: 1, title: "Mean Divergence of Desynced Inputs (metres, log scale)" },
+    yaxis: { type: "log", dtick: 1, title: "Peak Divergence (metres, log scale)" },
+    shapes: [
+      { type: "line", yref: "paper", y0: 0, y1: 1, x0: D.model.treeThresholds[0], x1: D.model.treeThresholds[0], line: { dash: "dash", color: "#0f172a", width: 2 } },
+      { type: "line", xref: "paper", x0: 0, x1: 1, y0: D.model.thresholdMaxMagnitude, y1: D.model.thresholdMaxMagnitude, line: { dash: "dot", color: "#64748b" } }],
+    annotations: [
+      { x: Math.log10(D.model.treeThresholds[0]), yref: "paper", y: 0.98, text: `Decision Tree: > ${fmt(D.model.treeThresholds[0], 3)} m`, showarrow: false, xanchor: "left", xshift: 5, font: { size: 12, color: "#0f172a", weight: "bold" } },
+      { xref: "paper", x: 0.98, y: Math.log10(D.model.thresholdMaxMagnitude), text: `Threshold: > ${fmt(D.model.thresholdMaxMagnitude)} m`, showarrow: false, xanchor: "right", yshift: -10, font: { size: 11, color: "#64748b" } }],
+    legend: { orientation: "h", y: -0.16 }, margin: { l: 60, r: 18, t: 20, b: 70 },
+  }), CFG);
+})();
+
+// ---------------------------------------------------------------- RQ3 DETECTION
+(function detection() {
+  const testRuns = D.meta.testRuns.length;
+  el("splitText").textContent = `The dataset was split by run (140 runs for training, 60 held out for testing). Paired sessions from the same movement run never appear in both sets, guaranteeing true out-of-sample evaluation.`;
+  
+  let html = `<tr><th class="l">Detector</th><th>Cheats Caught</th><th>False Alarms</th><th>Detection Rate</th><th>False Positive Rate</th><th>Overall Accuracy</th></tr>`;
+  for (const m of MODELS) {
+    const r = D.metrics.find(x => x.Model === m);
+    html += `<tr>
+      <td class="l"><strong>${MODEL_LABEL[m]}</strong></td>
+      <td>${r.TP} of ${r.TP + r.FN}</td>
+      <td>${r.FP} of ${r.FP + r.TN}</td>
+      <td><strong>${pct(r.DetectionRate)}</strong></td>
+      <td>${pct(r.FalsePositiveRate, 2)}</td>
+      <td><strong>${pct(r.Accuracy)}</strong></td>
+    </tr>`;
+  }
+  el("metricsTable").innerHTML = html;
+  
+  el("rules").innerHTML = `Flag as cheating if: <strong>Mean Divergence of Desynced Inputs &gt; ${fmt(D.model.treeThresholds[0], 3)} m</strong>`;
+
+  Plotly.newPlot("roc", [
+    ...MODELS.map(m => ({ x: D.roc[m].fpr, y: D.roc[m].tpr, mode: "lines", name: `${MODEL_LABEL[m]} (AUC: ${fmt(D.metrics.find(r => r.Model === m).AUC, 3)})`,
+      line: { color: { Threshold: "#94a3b8", LogisticRegression: "#d97706", DecisionTree: "#16a34a" }[m], width: { Threshold: 1.5, LogisticRegression: 2, DecisionTree: 2.5 }[m] } })),
+    { x: [0, 1], y: [0, 1], mode: "lines", line: { dash: "dot", color: "#cbd5e1" }, showlegend: false, hoverinfo: "skip" }],
+    layout({ xaxis: { title: "False Positive Rate (Lower is better)", range: [-0.01, 0.25] }, yaxis: { title: "Detection Rate (Higher is better)", range: [0.88, 1.005] }, legend: { x: 0.35, y: 0.08 } }), CFG);
+
+  options(el("modelSelect"), MODELS, MODELS.map(m => MODEL_LABEL[m]), "DecisionTree");
+  const draw = () => {
+    const m = el("modelSelect").value, r = D.metrics.find(x => x.Model === m);
+    Plotly.react("confusion", [{ type: "heatmap", z: [[r.TN, r.FP], [r.FN, r.TP]], x: ["Predicted Honest", "Predicted Cheat"], y: ["Actual Honest", "Actual Cheat"],
+      colorscale: [[0, "#f8fafc"], [1, "#1e3a8a"]], showscale: false, text: [[r.TN, r.FP], [r.FN, r.TP]], texttemplate: "%{text}", textfont: { size: 16 } }],
+      layout({ title: { text: "Confusion Matrix", font: { size: 13 } }, yaxis: { autorange: "reversed" }, margin: { l: 80, r: 10, t: 36, b: 40 } }), CFG);
+      
+    const rows = TYPES.map(t => D.perType.find(x => x.Model === m && x.PlayerType === t));
+    Plotly.react("perType", [{ type: "bar", x: TYPES.map(t => LABEL[t]), y: rows.map(x => 100 * x.FlaggedRate), marker: { color: TYPES.map(t => COLOUR[t]) },
+      text: rows.map(x => `${x.Flagged}/${x.Sessions}`), textposition: "outside", cliponaxis: false }],
+      layout({ title: { text: "% Flagged by Player Type", font: { size: 13 } }, xaxis: { tickangle: 0, tickfont: { size: 11 } }, yaxis: { title: "% Flagged", range: [0, 115] }, margin: { l: 45, r: 10, t: 36, b: 40 } }), CFG);
+      
+    const errs = D.errors.filter(e => e.wrong.includes(m));
+    el("errorTable").innerHTML = `<tr><th class="l">Session ID</th><th class="l">Actual Type</th><th>Delay</th><th>Loss</th><th>Mean Error</th><th>Peak Error</th></tr>` +
+      errs.map(e => `<tr><td class="l"><a href="#explorer" onclick="showSession('${e.id}')" style="color:var(--accent);font-weight:600;">${e.id}</a></td><td class="l">${LABEL[e.type]}</td><td>${e.latency} ms</td><td>${e.loss}%</td><td>${fmt(e.meanDivergent, 3)} m</td><td>${fmt(e.max)} m</td></tr>`).join("");
+      
+    const byType = {}; errs.forEach(e => byType[LABEL[e.type]] = (byType[LABEL[e.type]] || 0) + 1);
+    el("errorNote").textContent = `Summary: ${errs.length} total mistake(s): ${Object.entries(byType).map(([k, v]) => `${v} ${k}`).join(", ")}. Click any session to inspect its trajectory in the explorer below.`;
+  };
+  el("modelSelect").onchange = draw; draw();
+})();
+
+// ---------------------------------------------------------------- EXPLORER
+const EX = Object.keys(D.explorer).map(id => S.find(r => r[col.id] === id));
+function exRuns() {
+  const t = el("exType").value, l = Number(el("exLatency").value), p = Number(el("exLoss").value);
+  return EX.filter(r => typeOf(r) === t && r[col.latency] === l && r[col.loss] === p).map(r => r[col.run]).sort((a, b) => a - b);
+}
+function refreshRuns(selected) {
+  const runs = exRuns();
+  options(el("exRun"), runs, runs.map(r => `Run ${r}`), runs.includes(selected) ? selected : runs[0]);
+}
+function drawSession() {
+  const t = el("exType").value, l = Number(el("exLatency").value), p = Number(el("exLoss").value), run = Number(el("exRun").value);
+  const r = EX.find(x => typeOf(x) === t && x[col.latency] === l && x[col.loss] === p && x[col.run] === run);
+  const s = D.explorer[r[col.id]];
+  const time = s.seq.map(q => q / D.meta.tickRate);
+  
+  Plotly.react("exSeries", [{ x: time, y: s.mag, mode: "lines", line: { color: COLOUR[t], width: 1.8 }, fill: "tozeroy", fillcolor: COLOUR[t] + "1a", name: "Divergence",
+    hovertemplate: "Time: %{x:.2f} s<br>Error: %{y:.3f} m<extra></extra>" }],
+    layout({ title: { text: `Position Error Over 30 Seconds (${r[col.id]})`, font: { size: 13 } }, xaxis: { title: "Time in Session (s)", range: [0, 30] }, yaxis: { title: "Divergence Error (metres)", rangemode: "tozero" },
+      shapes: [{ type: "line", xref: "paper", x0: 0, x1: 1, y0: D.meta.divergenceEpsilon, y1: D.meta.divergenceEpsilon, line: { dash: "dot", color: "#94a3b8" } }], showlegend: false }), CFG);
+      
+  const h = D.meta.arenaHalfSize;
+  Plotly.react("exArena", [
+    { x: s.ax, y: s.az, mode: "lines", name: "Server Truth (Authoritative)", line: { color: "#0f172a", width: 2 } },
+    { x: s.cx, y: s.cz, mode: "lines", name: "Client Claim", line: { color: COLOUR[t], width: 1.5, dash: "dot" } },
+    { x: [s.ax[0]], y: [s.az[0]], mode: "markers", name: "Start", marker: { color: "#16a34a", size: 10 } }],
+    layout({ title: { text: "Arena Movement Map (Top-Down)", font: { size: 13 } }, xaxis: { range: [-h - 1, h + 1], zeroline: false, constrain: "domain" },
+      yaxis: { range: [-h - 1, h + 1], zeroline: false, scaleanchor: "x" }, legend: { orientation: "h", y: -0.12 },
+      shapes: [{ type: "rect", x0: -h, x1: h, y0: -h, y1: h, line: { color: "#cbd5e1" } }] }), CFG);
+      
+  const tree = r[col.MeanCorrectionMagnitude] > D.model.treeThresholds[0];
+  el("exVerdict").innerHTML = `
+    <strong>Status:</strong> 
+    <span class="pill ${tree ? "flag" : "pass"}">${tree ? "FLAGGED AS CHEATING" : "CLEAN / HONEST"}</span>
+    <span style="color:var(--muted);font-size:12px;margin-left:6px;">(${r[col.test] ? "Held-out test set" : "Training set"})</span>`;
+    
+  // Cleaned, human-readable 4-card metric summary
+  el("exFeatures").innerHTML = `
+    <tr>
+      <th class="l">Player Behavior</th>
+      <th>Network Profile</th>
+      <th>Peak Divergence</th>
+      <th>Mean Divergence</th>
+      <th>Inputs Desynced</th>
+      <th>Client Snap-Backs</th>
+    </tr>
+    <tr>
+      <td class="l"><strong>${LABEL[t]}</strong></td>
+      <td>${r[col.latency]} ms delay, ${r[col.loss]}% loss</td>
+      <td><strong>${fmt(r[col.MaxMagnitude], 2)} m</strong></td>
+      <td>${fmt(r[col.MeanCorrectionMagnitude], 3)} m</td>
+      <td>${r[col.divergentInputs]} / 900</td>
+      <td>${r[col.clientCorrections]}</td>
+    </tr>`;
+}
+
+function showSession(id) {
+  const r = S.find(x => x[col.id] === id);
+  el("exType").value = typeOf(r); el("exLatency").value = r[col.latency]; el("exLoss").value = r[col.loss];
+  refreshRuns(r[col.run]); el("exRun").value = r[col.run]; drawSession();
+}
+
+(function explorer() {
+  options(el("exType"), TYPES, TYPES.map(t => LABEL[t]), "SpeedHack");
+  options(el("exLatency"), lats, lats.map(l => `${l} ms`), 150);
+  options(el("exLoss"), losses, losses.map(p => `${p}%`), 3);
+  refreshRuns();
+  for (const id of ["exType", "exLatency", "exLoss"]) el(id).onchange = () => { refreshRuns(Number(el("exRun").value)); drawSession(); };
+  el("exRun").onchange = drawSession;
+  drawSession();
+})();
+</script>
+</body>
+</html>

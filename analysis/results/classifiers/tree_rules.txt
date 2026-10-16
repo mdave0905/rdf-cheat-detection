@@ -1,0 +1,9 @@
+Decision tree, depth 1 (cross-validated accuracy by depth: 1: 0.9974, 2: 0.9974, 3: 0.9972, 4: 0.9972, 5: 0.9972, 6: 0.9972)
+
+|--- MeanCorrectionMagnitude <= 0.485
+|   |--- class: 0
+|--- MeanCorrectionMagnitude >  0.485
+|   |--- class: 1
+
+Leaves that flag cheating:
+  - mean divergence of divergent inputs (m) > 0.485

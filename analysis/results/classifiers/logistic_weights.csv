@@ -1,0 +1,11 @@
+Feature,StandardisedWeight
+(intercept),15.432348226950065
+CorrectionsPerSecond,2.9920844489768377
+MeanMagnitude,7.035360583939498
+StdMagnitude,2.9527603824836364
+MaxMagnitude,2.0253345403518748
+P95Magnitude,3.522843634792058
+LargeCorrectionRatio,-2.40458657621521
+MeanCorrectionMagnitude,2.7189576791498293
+MeanCorrectionInterval,-0.13232724501966328
+DirectionConsistency,2.1862683294802827

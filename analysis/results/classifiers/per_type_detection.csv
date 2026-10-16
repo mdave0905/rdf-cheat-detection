@@ -1,0 +1,13 @@
+Model,PlayerType,Sessions,Flagged,FlaggedRate
+Threshold,Legitimate,540,0,0.0
+Threshold,SpeedHack,540,412,0.762962962962963
+Threshold,PositionHack,540,540,1.0
+Threshold,InputReplay,540,531,0.9833333333333333
+LogisticRegression,Legitimate,540,1,0.001851851851851852
+LogisticRegression,SpeedHack,540,540,1.0
+LogisticRegression,PositionHack,540,540,1.0
+LogisticRegression,InputReplay,540,534,0.9888888888888889
+DecisionTree,Legitimate,540,1,0.001851851851851852
+DecisionTree,SpeedHack,540,540,1.0
+DecisionTree,PositionHack,540,540,1.0
+DecisionTree,InputReplay,540,531,0.9833333333333333
